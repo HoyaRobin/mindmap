@@ -35,14 +35,15 @@ svg text{user-select:none;-webkit-user-select:none;pointer-events:none;font-fami
 .add{opacity:0;transition:opacity .12s;cursor:pointer}
 .nd:hover .add,.nd.sel .add{opacity:1}
 .add:hover circle,.add:hover rect{fill:var(--hover)}
-#thm{position:fixed;z-index:25;width:230px;max-height:calc(100vh - 90px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
-#thm[hidden]{display:none}
-#thm .th{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:8px;border-radius:8px}
-#thm .th:hover{background:var(--hover)}
-#thm .th.on{border-color:var(--accent)}
+#thm,#lay{position:fixed;z-index:25;width:230px;max-height:calc(100vh - 90px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+#thm[hidden],#lay[hidden]{display:none}
+#thm .th,#lay .th{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:8px;border-radius:8px}
+#thm .th:hover,#lay .th:hover{background:var(--hover)}
+#thm .th.on,#lay .th.on{border-color:var(--accent)}
 #thm .dots{display:flex;gap:4px}
 #thm .dots i{width:16px;height:16px;border-radius:50%;display:block}
-#thm small{color:var(--muted)}
+#lay .ic{font-size:18px;line-height:1}
+#thm small,#lay small{color:var(--muted)}
 #inp{position:absolute;display:none;z-index:5;text-align:center;border:2px solid var(--accent);border-radius:20px;background:var(--panel);color:var(--text);font-family:inherit;outline:none;padding:0 8px}
 #hint{position:absolute;left:12px;bottom:calc(10px + env(safe-area-inset-bottom,0));color:var(--muted);font-size:12px;pointer-events:none}
 #toast{position:fixed;left:50%;bottom:calc(30px + env(safe-area-inset-bottom,0));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
@@ -61,7 +62,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
   <div id="foot">
     <button id="bNew">新增</button><button id="bExp">匯出備份</button><button id="bImp">匯入</button>
     <p>內容自動儲存在這個瀏覽器。換電腦請用匯出/匯入。</p>
-    <p id="ver">版本 2026-10-01 · v7</p>
+    <p id="ver">版本 2026-10-01 · v8</p>
   </div>
 </aside>
 <div id="main">
@@ -75,6 +76,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
     <button data-a="del" title="Delete">刪除</button>
     <span class="sp"></span>
     <button data-a="undo" title="Ctrl+Z">復原</button>
+    <button data-a="lay">版面方向</button>
     <button data-a="thm">配色風格</button>
     <button data-a="zo">縮小</button><button data-a="zi">放大</button><button data-a="ctr">置中</button>
   </div>
@@ -87,6 +89,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
 <input type="file" id="file" accept=".json,application/json" hidden>
 <div id="toast"></div>
 <div id="thm" hidden></div>
+<div id="lay" hidden></div>
 <script>
 const KEY='hoyarobin_mindmap_v1';
 const PAL=['#e4572e','#e9a23b','#3fa56b','#2f8fd8','#8a63d2','#d9558f'];
@@ -135,14 +138,40 @@ const getSel=()=>(sel&&find(sel))||find(cur().root.id);
 /* 版面 */
 const cx=document.createElement('canvas').getContext('2d');
 const tw=(n,root)=>{cx.font=(root?'600 17px ':'14px ')+'sans-serif';return Math.max(root?90:56,cx.measureText(n.text||' ').width+(root?40:28))};
-function sh(n){n._w=tw(n,false);n._h=(n.collapsed||!n.children.length)?VG:n.children.reduce((s,c)=>s+sh(c),0);return n._h}
-function pl(n,edge,top,d){n._x=d>0?edge:edge-n._w;n._y=top+n._h/2;
-  if(!n.collapsed){let t=top;for(const c of n.children){pl(c,d>0?n._x+n._w+HG:n._x-HG,t,d);t+=c._h}}}
-function layout(){const r=cur().root;r._w=tw(r,true);r._x=-r._w/2;r._y=0;
-  for(const d of [1,-1]){
-    const ch=r.children.filter(c=>(c.side==='l')===(d<0));
-    const H=ch.reduce((s,c)=>s+sh(c),0);let t=-H/2;
-    for(const c of ch){pl(c,d>0?r._x+r._w+HG:r._x-HG,t,d);t+=c._h}}}
+const VD=44;
+const MODES={lr:['r','l'],r:['r'],l:['l'],d:['d'],u:['u'],four:['r','d','l','u']};
+const DIRM={r:'R',l:'L',d:'D',u:'U'};
+function pickSide(){const m=cur(),sd=MODES[m.layout||'lr'],cnt=k=>m.root.children.filter(c=>(c.side||'r')===k).length;
+  return sd.reduce((a,k)=>cnt(k)<cnt(a)?k:a,sd[0])}
+function sh(n,d){
+  n._w=tw(n,false);n._hh=30;
+  const sum=(n.collapsed||!n.children.length)?0:n.children.reduce((s,c)=>s+sh(c,d),0);
+  n._sum=sum;n._b=(d==='D'||d==='U')?Math.max(n._w+24,sum):Math.max(VG,sum);return n._b}
+function pl(n,edge,start,d){
+  const cb=start+n._b/2,w=n._w,h=n._hh;
+  if(d==='R'){n._x=edge;n._y=cb}
+  else if(d==='L'){n._x=edge-w;n._y=cb}
+  else if(d==='D'){n._x=cb-w/2;n._y=edge+h/2}
+  else{n._x=cb-w/2;n._y=edge-h/2}
+  if(!n.collapsed){let t=start+(n._b-n._sum)/2;
+    const ce=d==='R'?n._x+w+HG:d==='L'?n._x-HG:d==='D'?n._y+h/2+VD:n._y-h/2-VD;
+    for(const c of n.children){pl(c,ce,t,d);t+=c._b}}}
+function layout(){
+  const r=cur().root;r._w=tw(r,true);r._hh=40;r._x=-r._w/2;r._y=0;
+  const g={r:[],d:[],l:[],u:[]},B={};
+  r.children.forEach(c=>g[c.side&&g[c.side]?c.side:'r'].push(c));
+  for(const k in g)B[k]=g[k].reduce((s,c)=>s+sh(c,DIRM[k]),0);
+  const place=(k,edge)=>{let t=-B[k]/2;for(const c of g[k]){pl(c,edge,t,DIRM[k]);t+=c._b}};
+  const HV=Math.max(B.r,B.l)/2,rh=r._hh/2,base=rh+VD;
+  place('r',r._x+r._w+HG);place('l',r._x-HG);
+  place('d',B.d/2>r._w/2+10?Math.max(base,HV+30):base);
+  place('u',-(B.u/2>r._w/2+10?Math.max(base,HV+30):base));
+}
+function setLayout(k){
+  mut(()=>{const m=cur(),sd=MODES[k],ch=m.root.children,N=ch.length;m.layout=k;
+    ch.forEach((c,i)=>{c.side=sd[Math.min(sd.length-1,Math.floor(i*sd.length/N))]})});
+  center();
+}
 
 /* 繪圖 */
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -162,33 +191,44 @@ function hueAt(sp,k,N){const M=sp.length,t=k*M/N,i=Math.floor(t),f=t-i;if(f<1e-6
 function inkOn(hex){const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));return(.299*v[0]+.587*v[1]+.114*v[2])/255>.6?'#1d2530':'#fff'}
 function render(){
   applyTheme();layout();const r=cur().root,T=theme();let e='',nd='';
-  const rch=r.children,ord=rch.filter(c=>c.side!=='l').concat(rch.filter(c=>c.side==='l').reverse()),rb={};
+  const rch=r.children,by=k=>rch.filter(c=>(c.side||'r')===k),ord=[...by('r'),...by('d').reverse(),...by('l').reverse(),...by('u')],rb={};
   ord.forEach((c,k)=>{rb[c.id]=hueAt(T.sp,k,ord.length)});
+  const anc=(n,k,d)=>{const x=n._x,y=n._y,w=n._w,h=n._hh,o=k==='out';
+    if(d==='R')return o?[x+w,y]:[x,y];
+    if(d==='L')return o?[x,y]:[x+w,y];
+    if(d==='D')return o?[x+w/2,y+h/2]:[x+w/2,y-h/2];
+    return o?[x+w/2,y-h/2]:[x+w/2,y+h/2]};
   const walk=(n,p,base,d,dep)=>{
-    const isR=n===r,h=isR?40:30,col=isR?'var(--accent)':tone(base,dep,T.decay),solid=isR||dep===1,ink=isR?'#fff':(dep===1?inkOn(base):'var(--text)');
-    if(p){const x1=d>0?p._x+p._w:p._x,x2=d>0?n._x:n._x+n._w,m=(x1+x2)/2;
-      e+=`<path d="M${x1} ${p._y}C${m} ${p._y} ${m} ${n._y} ${x2} ${n._y}" stroke="${col}" stroke-width="${dep===1?(T.ew||3):(T.ew||3)*.75}" fill="none"/>`}
+    const isR=n===r,h=n._hh,col=isR?'var(--accent)':tone(base,dep,T.decay),solid=isR||dep===1,ink=isR?'#fff':(dep===1?inkOn(base):'var(--text)'),v=d==='D'||d==='U';
+    if(p){const [x1,y1]=anc(p,'out',d),[x2,y2]=anc(n,'in',d),mx=(x1+x2)/2,my=(y1+y2)/2;
+      e+=`<path d="M${x1} ${y1}C${v?`${x1} ${my} ${x2} ${my}`:`${mx} ${y1} ${mx} ${y2}`} ${x2} ${y2}" stroke="${col}" stroke-width="${dep===1?(T.ew||3):(T.ew||3)*.75}" fill="none"/>`}
     const rc=`x="${n._x}" y="${n._y-h/2}" width="${n._w}" height="${h}" rx="${T.rx==null?h/2:T.rx}"`;
     nd+=`<g data-id="${n.id}" class="nd${n.id===sel?' sel':''}" style="cursor:pointer">`+
       `<rect ${rc} fill="${solid?col:'var(--node)'}" stroke="${col}" stroke-width="${T.sw||2}"${T.glow?` style="filter:drop-shadow(0 0 6px ${col})"`:''}/>`+
       (solid?'':`<rect ${rc} fill="${col}" fill-opacity=".13" stroke="none"/>`)+
       `<text x="${n._x+n._w/2}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="${isR?17:14}" font-weight="${isR?600:400}" fill="${ink}">${esc(n.text)}</text>`;
-    const plus=(x,sd,gx)=>`<rect x="${gx}" y="${n._y-14}" width="32" height="28" fill="transparent"/><g class="add" data-add="${n.id}" data-side="${sd}"><title>新增子節點</title><circle cx="${x}" cy="${n._y}" r="10" fill="var(--panel)" stroke="${col}" stroke-width="2"/><path d="M${x-4} ${n._y}h8M${x} ${n._y-4}v8" stroke="${col}" stroke-width="2" stroke-linecap="round"/></g>`;
-    if(isR){nd+=plus(n._x+n._w+16,'r',n._x+n._w)+plus(n._x-16,'l',n._x-32)}
-    else if(n.collapsed&&n.children.length){const bx=d>0?n._x+n._w+13:n._x-13;
-      nd+=`<circle data-tog="${n.id}" cx="${bx}" cy="${n._y}" r="10" fill="var(--node)" stroke="${col}" stroke-width="2" style="cursor:pointer"/><text x="${bx}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--text)">${n.children.length}</text>`}
-    else nd+=d>0?plus(n._x+n._w+16,'r',n._x+n._w):plus(n._x-16,'l',n._x-32);
-    if(!isR){const mx=n._x+n._w/2,by=n._y+h/2;
-      nd+=`<rect x="${n._x}" y="${by}" width="${n._w}" height="18" fill="transparent"/><g class="add" data-sib="${n.id}"><title>新增同層節點</title><rect x="${mx-11}" y="${by+3}" width="22" height="12" rx="6" fill="var(--panel)" stroke="${col}" stroke-width="1.8" stroke-dasharray="3 2"/><path d="M${mx-3} ${by+9}h6M${mx} ${by+6}v6" stroke="${col}" stroke-width="1.8" stroke-linecap="round"/></g>`}
+    const off=(dd,k)=>{const [ax,ay]=anc(n,'out',dd);return dd==='R'?[ax+k,ay]:dd==='L'?[ax-k,ay]:dd==='D'?[ax,ay+k]:[ax,ay-k]};
+    const plus=(dd,sd)=>{const [ax,ay]=anc(n,'out',dd),[x,y]=off(dd,16),
+      hr=dd==='R'?[ax,ay-14,32,28]:dd==='L'?[ax-32,ay-14,32,28]:dd==='D'?[ax-14,ay,28,32]:[ax-14,ay-32,28,32];
+      return `<rect x="${hr[0]}" y="${hr[1]}" width="${hr[2]}" height="${hr[3]}" fill="transparent"/><g class="add" data-add="${n.id}" data-side="${sd}"><title>新增子節點</title><circle cx="${x}" cy="${y}" r="10" fill="var(--panel)" stroke="${col}" stroke-width="2"/><path d="M${x-4} ${y}h8M${x} ${y-4}v8" stroke="${col}" stroke-width="2" stroke-linecap="round"/></g>`};
+    if(isR){for(const sd of MODES[cur().layout||'lr'])nd+=plus(DIRM[sd],sd)}
+    else if(n.collapsed&&n.children.length){const [bx,bY]=off(d,13);
+      nd+=`<circle data-tog="${n.id}" cx="${bx}" cy="${bY}" r="10" fill="var(--node)" stroke="${col}" stroke-width="2" style="cursor:pointer"/><text x="${bx}" y="${bY}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--text)">${n.children.length}</text>`}
+    else nd+=plus(d,'');
+    if(!isR){
+      if(v){const sx=n._x+n._w+12;
+        nd+=`<rect x="${n._x+n._w}" y="${n._y-h/2}" width="24" height="${h}" fill="transparent"/><g class="add" data-sib="${n.id}"><title>新增同層節點</title><rect x="${sx-6}" y="${n._y-11}" width="12" height="22" rx="6" fill="var(--panel)" stroke="${col}" stroke-width="1.8" stroke-dasharray="3 2"/><path d="M${sx-3} ${n._y}h6M${sx} ${n._y-3}v6" stroke="${col}" stroke-width="1.8" stroke-linecap="round"/></g>`}
+      else{const mx=n._x+n._w/2,sy=n._y+h/2;
+        nd+=`<rect x="${n._x}" y="${sy}" width="${n._w}" height="18" fill="transparent"/><g class="add" data-sib="${n.id}"><title>新增同層節點</title><rect x="${mx-11}" y="${sy+3}" width="22" height="12" rx="6" fill="var(--panel)" stroke="${col}" stroke-width="1.8" stroke-dasharray="3 2"/><path d="M${mx-3} ${sy+9}h6M${mx} ${sy+6}v6" stroke="${col}" stroke-width="1.8" stroke-linecap="round"/></g>`}}
     nd+='</g>';
-    if(!n.collapsed)n.children.forEach((c,i)=>walk(c,n,c.ci!=null?T.sp[c.ci%T.sp.length]:(isR?rb[c.id]:base),isR?(c.side==='l'?-1:1):d,dep+1));
+    if(!n.collapsed)n.children.forEach(c=>walk(c,n,c.ci!=null?T.sp[c.ci%T.sp.length]:(isR?rb[c.id]:base),isR?(DIRM[c.side||'r']||'R'):d,dep+1));
   };
-  walk(r,null,T.sp[0],1,0);
+  walk(r,null,T.sp[0],'R',0);
   G.innerHTML=e+nd;apply();renderList();
 }
 function apply(){G.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.k})`)}
 function renderList(){L.innerHTML=S.maps.map(m=>`<div class="mi${m.id===S.cur?' on':''}" data-m="${m.id}"><span>${esc(m.name)}</span><button data-ren="${m.id}" title="改名">改名</button><button data-del="${m.id}" title="刪除">刪除</button></div>`).join('')}
-function center(){const b=svg.getBoundingClientRect();view={x:b.width/2,y:b.height/2,k:1};apply()}
+function center(){const b=svg.getBoundingClientRect(),k=cur().layout||'lr';view={x:b.width*(k==='r'?.25:k==='l'?.75:.5),y:b.height*(k==='d'?.2:k==='u'?.8:.5),k:1};apply()}
 function zoom(f){const b=svg.getBoundingClientRect(),mx=b.width/2,my=b.height/2,k=Math.min(3,Math.max(.25,view.k*f));
   view.x=mx-(mx-view.x)*k/view.k;view.y=my-(my-view.y)*k/view.k;view.k=k;apply()}
 let tt;function toast(t){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('on'),2200)}
@@ -197,7 +237,7 @@ let tt;function toast(t){const el=$('toast');el.textContent=t;el.classList.add('
 function addChild(id,side){
   const f=id?find(id):getSel();if(!f)return;
   mut(()=>{const n=f.n,c=mk('新節點');
-    if(!f.p){const l=n.children.filter(x=>x.side==='l').length,r=n.children.length-l;c.side=side==='l'||side==='r'?side:(r<=l?'r':'l')}
+    if(!f.p)c.side=side||pickSide();
     n.collapsed=false;n.children.push(c);sel=c.id});
   edit();
 }
@@ -282,13 +322,14 @@ $('tb').addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON')e.preven
 $('tb').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   if(b.id==='burger'){document.body.classList.toggle('open');return}
   if(b.dataset.a==='thm'){toggleThm(b);return}
+  if(b.dataset.a==='lay'){toggleLay(b);return}
   ACT[b.dataset.a]&&ACT[b.dataset.a]()});
 
 /* 配色 */
 const THM=$('thm');
 function toggleThm(b){
   if(!THM.hidden){THM.hidden=true;return}
-  const now=cur().theme||'default';
+  LAY.hidden=true;const now=cur().theme||'default';
   THM.innerHTML=Object.entries(THEMES).map(([k,t])=>`<button class="th${k===now?' on':''}" data-th="${k}"><span class="dots">${t.sp.map(c=>`<i style="background:${c}"></i>`).join('')}</span><b>${t.n}</b><small>${t.d}</small></button>`).join('');
   THM.hidden=false;
   const r=b.getBoundingClientRect();
@@ -300,6 +341,24 @@ THM.addEventListener('click',e=>{
   mut(()=>{cur().theme=t.dataset.th});THM.hidden=true;toast('已套用「'+THEMES[t.dataset.th].n+'」');
 });
 document.addEventListener('pointerdown',e=>{if(!THM.hidden&&!e.target.closest('#thm')&&!e.target.closest('[data-a="thm"]'))THM.hidden=true});
+
+/* 版面方向 */
+const LAY=$('lay');
+const LAYS=[['lr','⇆','左右雙向','經典心智圖'],['r','→','向右','由左往右展開'],['l','←','向左','由右往左展開'],['d','↓','向下','組織圖樣式'],['u','↑','向上','由下往上展開'],['four','✥','四向展開','上下左右同時展開']];
+function toggleLay(b){
+  if(!LAY.hidden){LAY.hidden=true;return}
+  THM.hidden=true;const now=cur().layout||'lr';
+  LAY.innerHTML=LAYS.map(([k,ic,n,d])=>`<button class="th${k===now?' on':''}" data-lay="${k}"><span class="ic">${ic}</span><b>${n}</b><small>${d}</small></button>`).join('');
+  LAY.hidden=false;
+  const r=b.getBoundingClientRect();
+  LAY.style.left=Math.max(8,Math.min(r.left,innerWidth-LAY.offsetWidth-8))+'px';
+  LAY.style.top=(r.bottom+6)+'px';
+}
+LAY.addEventListener('click',e=>{
+  const t=e.target.closest('[data-lay]');if(!t)return;
+  setLayout(t.dataset.lay);LAY.hidden=true;toast('已切換為「'+LAYS.find(x=>x[0]===t.dataset.lay)[2]+'」');
+});
+document.addEventListener('pointerdown',e=>{if(!LAY.hidden&&!e.target.closest('#lay')&&!e.target.closest('[data-a="lay"]'))LAY.hidden=true});
 
 /* 多張心智圖 */
 $('bNew').onclick=()=>{
