@@ -31,10 +31,10 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 #cv{flex:1;position:relative;overflow:hidden}
 svg{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
 svg text{user-select:none;-webkit-user-select:none;pointer-events:none;font-family:inherit}
-.nd.sel rect{stroke-width:4;filter:drop-shadow(0 0 5px var(--accent))}
+.nd.sel>rect:first-of-type{stroke-width:4;filter:drop-shadow(0 0 5px var(--accent))}
 .add{opacity:0;transition:opacity .12s;cursor:pointer}
 .nd:hover .add,.nd.sel .add{opacity:1}
-.add:hover circle{fill:var(--hover)}
+.add:hover circle,.add:hover rect{fill:var(--hover)}
 #thm{position:fixed;z-index:25;width:230px;max-height:calc(100vh - 90px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
 #thm[hidden]{display:none}
 #thm .th{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:8px;border-radius:8px}
@@ -61,7 +61,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
   <div id="foot">
     <button id="bNew">新增</button><button id="bExp">匯出備份</button><button id="bImp">匯入</button>
     <p>內容自動儲存在這個瀏覽器。換電腦請用匯出/匯入。</p>
-    <p id="ver">版本 2026-10-01 · v6</p>
+    <p id="ver">版本 2026-10-01 · v7</p>
   </div>
 </aside>
 <div id="main">
@@ -81,7 +81,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
   <div id="cv">
     <svg id="svg"><g id="g"></g></svg>
     <input id="inp" aria-label="節點文字">
-    <div id="hint">滑過節點按 + 新增子節點 · Enter 同層 · 雙擊編輯 · Space 收合 · Delete 刪除 · Ctrl+Z 復原</div>
+    <div id="hint">滑過節點:側邊＋新增子節點、下方＋新增同層 · 雙擊編輯 · Space 收合 · Delete 刪除 · Ctrl+Z 復原</div>
   </div>
 </div>
 <input type="file" id="file" accept=".json,application/json" hidden>
@@ -90,7 +90,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
 <script>
 const KEY='hoyarobin_mindmap_v1';
 const PAL=['#e4572e','#e9a23b','#3fa56b','#2f8fd8','#8a63d2','#d9558f'];
-const HG=48,VG=40;
+const HG=48,VG=48;
 const $=id=>document.getElementById(id);
 const svg=$('svg'),G=$('g'),L=$('list'),INP=$('inp'),FILE=$('file');
 const uid=()=>Math.random().toString(36).slice(2,9);
@@ -173,11 +173,13 @@ function render(){
       `<rect ${rc} fill="${solid?col:'var(--node)'}" stroke="${col}" stroke-width="${T.sw||2}"${T.glow?` style="filter:drop-shadow(0 0 6px ${col})"`:''}/>`+
       (solid?'':`<rect ${rc} fill="${col}" fill-opacity=".13" stroke="none"/>`)+
       `<text x="${n._x+n._w/2}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="${isR?17:14}" font-weight="${isR?600:400}" fill="${ink}">${esc(n.text)}</text>`;
-    const plus=(x,sd,gx)=>`<rect x="${gx}" y="${n._y-14}" width="32" height="28" fill="transparent"/><g class="add" data-add="${n.id}" data-side="${sd}"><circle cx="${x}" cy="${n._y}" r="10" fill="var(--panel)" stroke="${col}" stroke-width="2"/><path d="M${x-4} ${n._y}h8M${x} ${n._y-4}v8" stroke="${col}" stroke-width="2" stroke-linecap="round"/></g>`;
+    const plus=(x,sd,gx)=>`<rect x="${gx}" y="${n._y-14}" width="32" height="28" fill="transparent"/><g class="add" data-add="${n.id}" data-side="${sd}"><title>新增子節點</title><circle cx="${x}" cy="${n._y}" r="10" fill="var(--panel)" stroke="${col}" stroke-width="2"/><path d="M${x-4} ${n._y}h8M${x} ${n._y-4}v8" stroke="${col}" stroke-width="2" stroke-linecap="round"/></g>`;
     if(isR){nd+=plus(n._x+n._w+16,'r',n._x+n._w)+plus(n._x-16,'l',n._x-32)}
     else if(n.collapsed&&n.children.length){const bx=d>0?n._x+n._w+13:n._x-13;
       nd+=`<circle data-tog="${n.id}" cx="${bx}" cy="${n._y}" r="10" fill="var(--node)" stroke="${col}" stroke-width="2" style="cursor:pointer"/><text x="${bx}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--text)">${n.children.length}</text>`}
     else nd+=d>0?plus(n._x+n._w+16,'r',n._x+n._w):plus(n._x-16,'l',n._x-32);
+    if(!isR){const mx=n._x+n._w/2,by=n._y+h/2;
+      nd+=`<rect x="${n._x}" y="${by}" width="${n._w}" height="18" fill="transparent"/><g class="add" data-sib="${n.id}"><title>新增同層節點</title><rect x="${mx-11}" y="${by+3}" width="22" height="12" rx="6" fill="var(--panel)" stroke="${col}" stroke-width="1.8" stroke-dasharray="3 2"/><path d="M${mx-3} ${by+9}h6M${mx} ${by+6}v6" stroke="${col}" stroke-width="1.8" stroke-linecap="round"/></g>`}
     nd+='</g>';
     if(!n.collapsed)n.children.forEach((c,i)=>walk(c,n,c.ci!=null?T.sp[c.ci%T.sp.length]:(isR?rb[c.id]:base),isR?(c.side==='l'?-1:1):d,dep+1));
   };
@@ -199,8 +201,8 @@ function addChild(id,side){
     n.collapsed=false;n.children.push(c);sel=c.id});
   edit();
 }
-function addSibling(){
-  const f=getSel();if(!f.p)return addChild();
+function addSibling(id){
+  const f=id?find(id):getSel();if(!f)return;if(!f.p)return addChild();
   mut(()=>{const c=mk('新節點');
     if(!find(f.p.id).p){c.side=f.n.side}
     f.p.children.splice(f.p.children.indexOf(f.n)+1,0,c);sel=c.id});
@@ -235,6 +237,10 @@ let pan=null,last={id:null,t:0};
 svg.addEventListener('pointerdown',e=>{
   endEdit(true);
   const ad=e.target.closest('[data-add]'),tg=e.target.closest('[data-tog]');
+  const sb=e.target.closest('[data-sib]');
+  if(sb){const id=sb.dataset.sib;
+    if(e.pointerType==='touch'&&sel!==id){sel=id;render();return}
+    addSibling(id);return}
   if(ad){const id=ad.dataset.add;
     if(e.pointerType==='touch'&&sel!==id){sel=id;render();return}
     addChild(id,ad.dataset.side);return}
