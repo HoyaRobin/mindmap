@@ -95,7 +95,7 @@ const svg=$('svg'),G=$('g'),L=$('list'),INP=$('inp'),FILE=$('file');
 const uid=()=>Math.random().toString(36).slice(2,9);
 const mk=(text,o)=>Object.assign({id:uid(),text,children:[]},o);
 const strip=(k,v)=>k[0]==='_'?undefined:v;
-const newMap=name=>{const r=mk('中心主題');['想法一','想法二','想法三'].forEach((t,i)=>r.children.push(mk(t,{side:i%2?'l':'r',color:PAL[i]})));return{id:uid(),name,root:r}};
+const newMap=name=>{const r=mk('中心主題');['想法一','想法二','想法三'].forEach((t,i)=>r.children.push(mk(t,{side:i%2?'l':'r',color:PAL[i]})));return{id:uid(),name,v:2,root:r}};
 let S,hist=[],sel=null,view={x:0,y:0,k:1};
 
 function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
@@ -119,10 +119,12 @@ const THEMES={
     v:{'--node':'#17172e','--text':'#e6f1ff','--muted':'#7f86b2','--accent':'#7a2cff','--panel':'#17172e','--hover':'#26264d'}}
 };
 const theme=()=>THEMES[cur().theme]||THEMES.default;
+for(const k in THEMES)THEMES[k].sp=sortPal(THEMES[k].pal);
 function applyTheme(){const T=theme();
   ['--node','--text','--muted','--accent','--panel','--hover'].forEach(k=>cv.style.removeProperty(k));
   cv.style.background=T.bg||'';
   if(T.v)for(const k in T.v)cv.style.setProperty(k,T.v[k]);}
+function normMap(m){norm(m.root);if(!m.v){m.root.children.forEach((c,i)=>{if(c.ci===i%6)delete c.ci});m.v=2}}
 function norm(n){if(n.color){const i=PAL.indexOf(n.color);if(i>=0)n.ci=i;delete n.color}n.children.forEach(norm)}
 function snap(){hist.push(JSON.stringify(S,strip));if(hist.length>60)hist.shift()}
 function mut(fn){snap();fn();save();render()}
@@ -147,9 +149,20 @@ function hsl(hex){const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3
   if(dd){s=dd/(1-Math.abs(2*l-1));h=mx===r?((g-b)/dd)%6:mx===g?(b-r)/dd+2:(r-g)/dd+4;h=(h*60+360)%360}return[h,s,l]}
 function tone(hex,dep,dc){dc=dc||.62;if(dep<=1)return hex;const[h,s,l]=hsl(hex),k=dep-1;
   return `hsl(${Math.round(h)} ${Math.round(Math.max(.14,s*Math.pow(dc,k))*100)}% ${Math.round(Math.min(.7,l+.05*k)*100)}%)`}
+function hex2(h,s,l){const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2;
+  const [r,g,b]=h<60?[c,x,0]:h<120?[x,c,0]:h<180?[0,c,x]:h<240?[0,x,c]:h<300?[x,0,c]:[c,0,x];
+  return '#'+[r,g,b].map(v=>Math.round((v+m)*255).toString(16).padStart(2,'0')).join('')}
+function sortPal(pal){const a=pal.slice().sort((x,y)=>hsl(x)[0]-hsl(y)[0]);let bi=0,bg=999;
+  a.forEach((c,i)=>{const g=(hsl(a[(i+1)%a.length])[0]-hsl(c)[0]+360)%360;if(g<bg){bg=g;bi=i}});
+  return a.slice(bi+1).concat(a.slice(0,bi+1))}
+function hueAt(sp,k,N){const M=sp.length,t=k*M/N,i=Math.floor(t),f=t-i;if(f<1e-6)return sp[i%M];
+  const a=hsl(sp[i%M]),b=hsl(sp[(i+1)%M]),dh=(b[0]-a[0]+360)%360;
+  return hex2((a[0]+dh*f)%360,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f)}
 function inkOn(hex){const v=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));return(.299*v[0]+.587*v[1]+.114*v[2])/255>.6?'#1d2530':'#fff'}
 function render(){
   applyTheme();layout();const r=cur().root,T=theme();let e='',nd='';
+  const rch=r.children,ord=rch.filter(c=>c.side!=='l').concat(rch.filter(c=>c.side==='l').reverse()),rb={};
+  ord.forEach((c,k)=>{rb[c.id]=hueAt(T.sp,k,ord.length)});
   const walk=(n,p,base,d,dep)=>{
     const isR=n===r,h=isR?40:30,col=isR?'var(--accent)':tone(base,dep,T.decay),solid=isR||dep===1,ink=isR?'#fff':(dep===1?inkOn(base):'var(--text)');
     if(p){const x1=d>0?p._x+p._w:p._x,x2=d>0?n._x:n._x+n._w,m=(x1+x2)/2;
@@ -165,9 +178,9 @@ function render(){
       nd+=`<circle data-tog="${n.id}" cx="${bx}" cy="${n._y}" r="10" fill="var(--node)" stroke="${col}" stroke-width="2" style="cursor:pointer"/><text x="${bx}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--text)">${n.children.length}</text>`}
     else nd+=d>0?plus(n._x+n._w+16,'r',n._x+n._w):plus(n._x-16,'l',n._x-32);
     nd+='</g>';
-    if(!n.collapsed)n.children.forEach((c,i)=>walk(c,n,c.ci!=null?T.pal[c.ci%T.pal.length]:(isR?T.pal[i%T.pal.length]:base),isR?(c.side==='l'?-1:1):d,dep+1));
+    if(!n.collapsed)n.children.forEach((c,i)=>walk(c,n,c.ci!=null?T.sp[c.ci%T.sp.length]:(isR?rb[c.id]:base),isR?(c.side==='l'?-1:1):d,dep+1));
   };
-  walk(r,null,T.pal[0],1,0);
+  walk(r,null,T.sp[0],1,0);
   G.innerHTML=e+nd;apply();renderList();
 }
 function apply(){G.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.k})`)}
@@ -181,14 +194,14 @@ let tt;function toast(t){const el=$('toast');el.textContent=t;el.classList.add('
 function addChild(id,side){
   const f=id?find(id):getSel();if(!f)return;
   mut(()=>{const n=f.n,c=mk('新節點');
-    if(!f.p){const l=n.children.filter(x=>x.side==='l').length,r=n.children.length-l;c.side=side==='l'||side==='r'?side:(r<=l?'r':'l');c.ci=n.children.length%6}
+    if(!f.p){const l=n.children.filter(x=>x.side==='l').length,r=n.children.length-l;c.side=side==='l'||side==='r'?side:(r<=l?'r':'l')}
     n.collapsed=false;n.children.push(c);sel=c.id});
   edit();
 }
 function addSibling(){
   const f=getSel();if(!f.p)return addChild();
   mut(()=>{const c=mk('新節點');
-    if(!find(f.p.id).p){c.side=f.n.side;c.ci=f.p.children.length%6}
+    if(!find(f.p.id).p){c.side=f.n.side}
     f.p.children.splice(f.p.children.indexOf(f.n)+1,0,c);sel=c.id});
   edit();
 }
@@ -196,7 +209,7 @@ function del(){const f=getSel();if(!f.p){toast('中心主題不能刪除');retur
   mut(()=>{f.p.children.splice(f.p.children.indexOf(f.n),1);sel=f.p.id})}
 function toggle(){const f=getSel();if(!f.n.children.length)return;mut(()=>{f.n.collapsed=!f.n.collapsed;sel=f.n.id})}
 function color(){const f=getSel();if(!f.p){toast('中心主題不能換色');return}
-  mut(()=>{const c=f.n.ci!=null?f.n.ci:(f.p===cur().root?cur().root.children.indexOf(f.n):-1);f.n.ci=(c+1)%6;sel=f.n.id})}
+  mut(()=>{const len=theme().sp.length;let c=(f.n.ci!=null?f.n.ci:-1)+1;if(c>=len){delete f.n.ci;toast('已恢復自動配色')}else f.n.ci=c;sel=f.n.id})}
 function undo(){if(!hist.length)return toast('沒有可復原的動作');S=JSON.parse(hist.pop());save();render()}
 function edit(){
   const f=getSel(),n=f.n,k=view.k,w=Math.max(n._w,110)*k;
@@ -269,7 +282,7 @@ const THM=$('thm');
 function toggleThm(b){
   if(!THM.hidden){THM.hidden=true;return}
   const now=cur().theme||'default';
-  THM.innerHTML=Object.entries(THEMES).map(([k,t])=>`<button class="th${k===now?' on':''}" data-th="${k}"><span class="dots">${t.pal.map(c=>`<i style="background:${c}"></i>`).join('')}</span><b>${t.n}</b><small>${t.d}</small></button>`).join('');
+  THM.innerHTML=Object.entries(THEMES).map(([k,t])=>`<button class="th${k===now?' on':''}" data-th="${k}"><span class="dots">${t.sp.map(c=>`<i style="background:${c}"></i>`).join('')}</span><b>${t.n}</b><small>${t.d}</small></button>`).join('');
   THM.hidden=false;
   const r=b.getBoundingClientRect();
   THM.style.left=Math.max(8,Math.min(r.left,innerWidth-THM.offsetWidth-8))+'px';
@@ -318,12 +331,12 @@ FILE.onchange=async()=>{
     const ok=arr.filter(m=>m&&m.root&&Array.isArray(m.root.children));
     if(!ok.length)throw 0;
     snap();
-    ok.forEach(m=>{norm(m.root);m.id=uid();m.name=(m.name||'匯入')+'(匯入)';S.maps.push(m)});
+    ok.forEach(m=>{normMap(m);m.id=uid();m.name=(m.name||'匯入')+'(匯入)';S.maps.push(m)});
     S.cur=S.maps[S.maps.length-1].id;sel=null;save();center();render();toast('已匯入 '+ok.length+' 張心智圖');
   }catch(err){toast('檔案格式不正確')}
 };
 
-load();S.maps.forEach(m=>norm(m.root));center();render();
+load();S.maps.forEach(normMap);center();render();
 </script>
 </body>
 </html>
