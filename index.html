@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>心智圖</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--text:#1d2530;--muted:#6b7785;--line:#d8dde4;--node:#fff;--accent:#2f5d8a;--hover:#eaeef3}
+@media (prefers-color-scheme:dark){:root{--bg:#13171c;--panel:#1b2027;--text:#e6e9ee;--muted:#97a1ae;--line:#2b323c;--node:#232a33;--accent:#5f93c9;--hover:#252c36}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;font-family:-apple-system,"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+button{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover{background:var(--hover)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#side{width:220px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0)}
+#side h1{font-size:15px;margin:0;padding:14px 14px 8px}
+#list{flex:1;overflow:auto;padding:0 8px}
+.mi{display:flex;align-items:center;gap:2px;padding:7px 8px;border-radius:6px;cursor:pointer}
+.mi:hover{background:var(--hover)}
+.mi.on{background:var(--accent);color:#fff}
+.mi span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mi button{border:0;background:transparent;padding:2px 6px;color:inherit;opacity:.7}
+.mi button:hover{opacity:1;background:rgba(127,127,127,.25)}
+#foot{padding:10px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px}
+#foot p{width:100%;margin:4px 0 0;color:var(--muted);font-size:12px}
+#main{flex:1;min-width:0;display:flex;flex-direction:column}
+#tb{display:flex;flex-wrap:wrap;gap:6px;padding:8px;padding-top:calc(8px + env(safe-area-inset-top,0));background:var(--panel);border-bottom:1px solid var(--line)}
+#tb .sp{flex:1}
+#burger{display:none}
+#cv{flex:1;position:relative;overflow:hidden}
+svg{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+svg text{user-select:none;-webkit-user-select:none;pointer-events:none;font-family:inherit}
+.nd.sel rect{stroke-width:4;filter:drop-shadow(0 0 5px var(--accent))}
+#inp{position:absolute;display:none;z-index:5;text-align:center;border:2px solid var(--accent);border-radius:20px;background:var(--panel);color:var(--text);font-family:inherit;outline:none;padding:0 8px}
+#hint{position:absolute;left:12px;bottom:calc(10px + env(safe-area-inset-bottom,0));color:var(--muted);font-size:12px;pointer-events:none}
+#toast{position:fixed;left:50%;bottom:calc(30px + env(safe-area-inset-bottom,0));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:8px 14px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:30}
+#toast.on{opacity:1}
+@media (max-width:700px){
+#side{position:fixed;left:0;top:0;bottom:0;z-index:20;transform:translateX(-100%);transition:transform .2s}
+body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
+#burger{display:inline-block}#hint{display:none}}
+@media (prefers-reduced-motion:reduce){#side,#toast{transition:none}}
+</style>
+</head>
+<body>
+<aside id="side">
+  <h1>我的心智圖</h1>
+  <div id="list"></div>
+  <div id="foot">
+    <button id="bNew">新增</button><button id="bExp">匯出備份</button><button id="bImp">匯入</button>
+    <p>內容自動儲存在這個瀏覽器。換電腦請用匯出/匯入。</p>
+  </div>
+</aside>
+<div id="main">
+  <div id="tb">
+    <button id="burger">☰</button>
+    <button data-a="child" title="Tab">新增子節點</button>
+    <button data-a="sib" title="Enter">新增同層</button>
+    <button data-a="edit" title="F2 或雙擊">編輯文字</button>
+    <button data-a="tog" title="Space">收合/展開</button>
+    <button data-a="col">換色</button>
+    <button data-a="del" title="Delete">刪除</button>
+    <span class="sp"></span>
+    <button data-a="undo" title="Ctrl+Z">復原</button>
+    <button data-a="zo">縮小</button><button data-a="zi">放大</button><button data-a="ctr">置中</button>
+  </div>
+  <div id="cv">
+    <svg id="svg"><g id="g"></g></svg>
+    <input id="inp" aria-label="節點文字">
+    <div id="hint">Tab 子節點 · Enter 同層 · 雙擊編輯 · Space 收合 · Delete 刪除 · Ctrl+Z 復原</div>
+  </div>
+</div>
+<input type="file" id="file" accept=".json,application/json" hidden>
+<div id="toast"></div>
+<script>
+const KEY='hoyarobin_mindmap_v1';
+const PAL=['#e4572e','#e9a23b','#3fa56b','#2f8fd8','#8a63d2','#d9558f'];
+const HG=48,VG=40;
+const $=id=>document.getElementById(id);
+const svg=$('svg'),G=$('g'),L=$('list'),INP=$('inp'),FILE=$('file');
+const uid=()=>Math.random().toString(36).slice(2,9);
+const mk=(text,o)=>Object.assign({id:uid(),text,children:[]},o);
+const strip=(k,v)=>k[0]==='_'?undefined:v;
+const newMap=name=>{const r=mk('中心主題');['想法一','想法二','想法三'].forEach((t,i)=>r.children.push(mk(t,{side:i%2?'l':'r',color:PAL[i]})));return{id:uid(),name,root:r}};
+let S,hist=[],sel=null,view={x:0,y:0,k:1};
+
+function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+  if(!S||!Array.isArray(S.maps)||!S.maps.length){const m=newMap('我的第一張心智圖');S={maps:[m],cur:m.id}}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S,strip))}catch(e){toast('儲存失敗:瀏覽器禁止儲存或空間不足,請先匯出備份')}}
+const cur=()=>S.maps.find(m=>m.id===S.cur)||S.maps[0];
+function snap(){hist.push(JSON.stringify(S,strip));if(hist.length>60)hist.shift()}
+function mut(fn){snap();fn();save();render()}
+function find(id,n,p){n=n||cur().root;if(n.id===id)return{n,p:p||null};for(const c of n.children){const r=find(id,c,n);if(r)return r}return null}
+const getSel=()=>(sel&&find(sel))||find(cur().root.id);
+
+/* 版面 */
+const cx=document.createElement('canvas').getContext('2d');
+const tw=(n,root)=>{cx.font=(root?'600 17px ':'14px ')+'sans-serif';return Math.max(root?90:56,cx.measureText(n.text||' ').width+(root?40:28))};
+function sh(n){n._w=tw(n,false);n._h=(n.collapsed||!n.children.length)?VG:n.children.reduce((s,c)=>s+sh(c),0);return n._h}
+function pl(n,edge,top,d){n._x=d>0?edge:edge-n._w;n._y=top+n._h/2;
+  if(!n.collapsed){let t=top;for(const c of n.children){pl(c,d>0?n._x+n._w+HG:n._x-HG,t,d);t+=c._h}}}
+function layout(){const r=cur().root;r._w=tw(r,true);r._x=-r._w/2;r._y=0;
+  for(const d of [1,-1]){
+    const ch=r.children.filter(c=>(c.side==='l')===(d<0));
+    const H=ch.reduce((s,c)=>s+sh(c),0);let t=-H/2;
+    for(const c of ch){pl(c,d>0?r._x+r._w+HG:r._x-HG,t,d);t+=c._h}}}
+
+/* 繪圖 */
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function render(){
+  layout();const r=cur().root;let e='',nd='';
+  const walk=(n,p,col,d)=>{
+    const isR=n===r,h=isR?40:30;
+    if(p){const x1=d>0?p._x+p._w:p._x,x2=d>0?n._x:n._x+n._w,m=(x1+x2)/2;
+      e+=`<path d="M${x1} ${p._y}C${m} ${p._y} ${m} ${n._y} ${x2} ${n._y}" stroke="${col}" stroke-width="2.5" fill="none"/>`}
+    nd+=`<g data-id="${n.id}" class="nd${n.id===sel?' sel':''}" style="cursor:pointer">`+
+      `<rect x="${n._x}" y="${n._y-h/2}" width="${n._w}" height="${h}" rx="${h/2}" fill="${isR?'var(--accent)':'var(--node)'}" stroke="${isR?'var(--accent)':col}" stroke-width="2"/>`+
+      `<text x="${n._x+n._w/2}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="${isR?17:14}" font-weight="${isR?600:400}" fill="${isR?'#fff':'var(--text)'}">${esc(n.text)}</text>`;
+    if(n.collapsed&&n.children.length){const bx=d>0?n._x+n._w+13:n._x-13;
+      nd+=`<circle cx="${bx}" cy="${n._y}" r="10" fill="${col}"/><text x="${bx}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#fff">${n.children.length}</text>`}
+    nd+='</g>';
+    if(!n.collapsed)n.children.forEach((c,i)=>walk(c,n,c.color||(isR?PAL[i%PAL.length]:col),isR?(c.side==='l'?-1:1):d));
+  };
+  walk(r,null,'var(--accent)',1);
+  G.innerHTML=e+nd;apply();renderList();
+}
+function apply(){G.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.k})`)}
+function renderList(){L.innerHTML=S.maps.map(m=>`<div class="mi${m.id===S.cur?' on':''}" data-m="${m.id}"><span>${esc(m.name)}</span><button data-ren="${m.id}" title="改名">改名</button><button data-del="${m.id}" title="刪除">刪除</button></div>`).join('')}
+function center(){const b=svg.getBoundingClientRect();view={x:b.width/2,y:b.height/2,k:1};apply()}
+function zoom(f){const b=svg.getBoundingClientRect(),mx=b.width/2,my=b.height/2,k=Math.min(3,Math.max(.25,view.k*f));
+  view.x=mx-(mx-view.x)*k/view.k;view.y=my-(my-view.y)*k/view.k;view.k=k;apply()}
+let tt;function toast(t){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('on'),2200)}
+
+/* 編輯動作 */
+function addChild(){
+  const f=getSel();
+  mut(()=>{const n=f.n,c=mk('新節點');
+    if(!f.p){const l=n.children.filter(x=>x.side==='l').length,r=n.children.length-l;c.side=r<=l?'r':'l';c.color=PAL[n.children.length%PAL.length]}
+    n.collapsed=false;n.children.push(c);sel=c.id});
+  edit();
+}
+function addSibling(){
+  const f=getSel();if(!f.p)return addChild();
+  mut(()=>{const c=mk('新節點');
+    if(!find(f.p.id).p){c.side=f.n.side;c.color=PAL[f.p.children.length%PAL.length]}
+    f.p.children.splice(f.p.children.indexOf(f.n)+1,0,c);sel=c.id});
+  edit();
+}
+function del(){const f=getSel();if(!f.p){toast('中心主題不能刪除');return}
+  mut(()=>{f.p.children.splice(f.p.children.indexOf(f.n),1);sel=f.p.id})}
+function toggle(){const f=getSel();if(!f.n.children.length)return;mut(()=>{f.n.collapsed=!f.n.collapsed;sel=f.n.id})}
+function color(){const f=getSel();if(!f.p){toast('中心主題不能換色');return}
+  mut(()=>{f.n.color=PAL[(PAL.indexOf(f.n.color)+1)%PAL.length];sel=f.n.id})}
+function undo(){if(!hist.length)return toast('沒有可復原的動作');S=JSON.parse(hist.pop());save();render()}
+function edit(){
+  const f=getSel(),n=f.n,k=view.k,w=Math.max(n._w,110)*k;
+  sel=n.id;
+  INP.style.cssText=`display:block;left:${view.x+(n._x+n._w/2)*k-w/2}px;top:${view.y+(n._y-16)*k}px;width:${w}px;height:${32*k}px;font-size:${14*k}px`;
+  INP.value=n.text;INP.dataset.id=n.id;INP.focus();INP.select();
+}
+function endEdit(ok){
+  if(INP.style.display!=='block')return;
+  const id=INP.dataset.id,v=INP.value.trim();INP.style.display='none';
+  if(ok&&v){const f=find(id);if(f&&f.n.text!==v)mut(()=>{f.n.text=v})}
+}
+INP.addEventListener('keydown',e=>{
+  if(e.key==='Enter'){e.preventDefault();endEdit(true)}
+  else if(e.key==='Escape'){endEdit(false)}
+  else if(e.key==='Tab'){e.preventDefault();endEdit(true);addChild()}
+});
+INP.addEventListener('blur',()=>endEdit(true));
+
+/* 滑鼠 / 觸控 */
+let pan=null,last={id:null,t:0};
+svg.addEventListener('pointerdown',e=>{
+  endEdit(true);
+  const g=e.target.closest('[data-id]');
+  if(g){const id=g.dataset.id,now=Date.now();
+    if(last.id===id&&now-last.t<400){sel=id;render();edit();last={id:null,t:0};return}
+    last={id,t:now};sel=id;render();return}
+  pan={sx:e.clientX,sy:e.clientY,vx:view.x,vy:view.y,moved:false};
+  svg.setPointerCapture(e.pointerId);
+});
+svg.addEventListener('pointermove',e=>{
+  if(!pan)return;const dx=e.clientX-pan.sx,dy=e.clientY-pan.sy;
+  if(Math.abs(dx)+Math.abs(dy)>4)pan.moved=true;
+  view.x=pan.vx+dx;view.y=pan.vy+dy;apply();
+});
+svg.addEventListener('pointerup',()=>{if(pan&&!pan.moved){sel=null;render()}pan=null});
+svg.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const b=svg.getBoundingClientRect(),mx=e.clientX-b.left,my=e.clientY-b.top;
+  const k=Math.min(3,Math.max(.25,view.k*Math.exp(-e.deltaY*.0015)));
+  view.x=mx-(mx-view.x)*k/view.k;view.y=my-(my-view.y)*k/view.k;view.k=k;apply();
+},{passive:false});
+
+/* 鍵盤 */
+document.addEventListener('keydown',e=>{
+  if(/INPUT|BUTTON/.test(e.target.tagName))return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return}
+  if(e.key==='Tab'){e.preventDefault();addChild()}
+  else if(e.key==='Enter'){e.preventDefault();addSibling()}
+  else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();del()}
+  else if(e.key==='F2'){e.preventDefault();edit()}
+  else if(e.key===' '){e.preventDefault();toggle()}
+});
+
+/* 工具列 */
+const ACT={child:addChild,sib:addSibling,edit,tog:toggle,col:color,del,undo,zi:()=>zoom(1.2),zo:()=>zoom(1/1.2),ctr:center};
+$('tb').addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON')e.preventDefault()});
+$('tb').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.id==='burger'){document.body.classList.toggle('open');return}
+  ACT[b.dataset.a]&&ACT[b.dataset.a]()});
+
+/* 多張心智圖 */
+$('bNew').onclick=()=>{
+  const name=prompt('新心智圖的名稱','新心智圖');if(!name||!name.trim())return;
+  const m=newMap(name.trim());S.maps.push(m);S.cur=m.id;sel=null;hist=[];save();center();render();
+  document.body.classList.remove('open');
+};
+L.addEventListener('click',e=>{
+  const d=e.target.closest('[data-del]'),rn=e.target.closest('[data-ren]'),it=e.target.closest('[data-m]');
+  if(d){
+    const m=S.maps.find(x=>x.id===d.dataset.del);
+    if(!confirm('刪除「'+m.name+'」?刪除後無法復原。'))return;
+    S.maps=S.maps.filter(x=>x!==m);
+    if(!S.maps.length)S.maps.push(newMap('新心智圖'));
+    if(S.cur===m.id)S.cur=S.maps[0].id;
+    sel=null;hist=[];save();center();render();return}
+  if(rn){
+    const m=S.maps.find(x=>x.id===rn.dataset.ren),v=prompt('新名稱',m.name);
+    if(v&&v.trim()){m.name=v.trim();save();renderList()}return}
+  if(it){S.cur=it.dataset.m;sel=null;hist=[];save();center();render();document.body.classList.remove('open')}
+});
+
+/* 匯出 / 匯入 */
+$('bExp').onclick=()=>{
+  const b=new Blob([JSON.stringify({v:1,maps:S.maps},strip,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);
+  a.download='mindmap-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);toast('已匯出備份檔');
+};
+$('bImp').onclick=()=>FILE.click();
+FILE.onchange=async()=>{
+  const f=FILE.files[0];FILE.value='';if(!f)return;
+  try{
+    const d=JSON.parse(await f.text()),arr=d.maps||(d.root?[d]:null);
+    if(!arr)throw 0;
+    const ok=arr.filter(m=>m&&m.root&&Array.isArray(m.root.children));
+    if(!ok.length)throw 0;
+    snap();
+    ok.forEach(m=>{m.id=uid();m.name=(m.name||'匯入')+'(匯入)';S.maps.push(m)});
+    S.cur=S.maps[S.maps.length-1].id;sel=null;save();center();render();toast('已匯入 '+ok.length+' 張心智圖');
+  }catch(err){toast('檔案格式不正確')}
+};
+
+load();center();render();
+</script>
+</body>
+</html>
