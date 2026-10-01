@@ -62,7 +62,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
   <div id="foot">
     <button id="bNew">新增</button><button id="bExp">匯出備份</button><button id="bImp">匯入</button>
     <p>內容自動儲存在這個瀏覽器。換電腦請用匯出/匯入。</p>
-    <p id="ver">版本 2026-10-01 · v8</p>
+    <p id="ver">版本 2026-10-01 · v10</p>
   </div>
 </aside>
 <div id="main">
@@ -83,7 +83,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
   <div id="cv">
     <svg id="svg"><g id="g"></g></svg>
     <input id="inp" aria-label="節點文字">
-    <div id="hint">滑過節點:側邊＋新增子節點、下方＋新增同層 · 雙擊編輯 · Space 收合 · Delete 刪除 · Ctrl+Z 復原</div>
+    <div id="hint">滑過節點:側邊＋新增子節點、下方＋新增同層 · 拖曳節點可移動 · 雙擊編輯 · Space 收合 · Delete 刪除 · Ctrl+Z 復原</div>
   </div>
 </div>
 <input type="file" id="file" accept=".json,application/json" hidden>
@@ -148,7 +148,7 @@ function sh(n,d){
   const sum=(n.collapsed||!n.children.length)?0:n.children.reduce((s,c)=>s+sh(c,d),0);
   n._sum=sum;n._b=(d==='D'||d==='U')?Math.max(n._w+24,sum):Math.max(VG,sum);return n._b}
 function pl(n,edge,start,d){
-  const cb=start+n._b/2,w=n._w,h=n._hh;
+  const cb=start+n._b/2,w=n._w,h=n._hh;n._d=d;
   if(d==='R'){n._x=edge;n._y=cb}
   else if(d==='L'){n._x=edge-w;n._y=cb}
   else if(d==='D'){n._x=cb-w/2;n._y=edge+h/2}
@@ -273,7 +273,7 @@ INP.addEventListener('keydown',e=>{
 INP.addEventListener('blur',()=>endEdit(true));
 
 /* 滑鼠 / 觸控 */
-let pan=null,last={id:null,t:0};
+let pan=null,drag=null,last={id:null,t:0};
 svg.addEventListener('pointerdown',e=>{
   endEdit(true);
   const ad=e.target.closest('[data-add]'),tg=e.target.closest('[data-tog]');
@@ -288,16 +288,20 @@ svg.addEventListener('pointerdown',e=>{
   const g=e.target.closest('[data-id]');
   if(g){const id=g.dataset.id,now=Date.now();
     if(last.id===id&&now-last.t<400){sel=id;render();edit();last={id:null,t:0};return}
-    last={id,t:now};sel=id;render();return}
+    last={id,t:now};sel=id;render();
+    if(id!==cur().root.id){drag={id,sx:e.clientX,sy:e.clientY,active:false};try{svg.setPointerCapture(e.pointerId)}catch(_){}}
+    return}
   pan={sx:e.clientX,sy:e.clientY,vx:view.x,vy:view.y,moved:false};
   svg.setPointerCapture(e.pointerId);
 });
 svg.addEventListener('pointermove',e=>{
+  if(drag){dragMove(e);return}
   if(!pan)return;const dx=e.clientX-pan.sx,dy=e.clientY-pan.sy;
   if(Math.abs(dx)+Math.abs(dy)>4)pan.moved=true;
   view.x=pan.vx+dx;view.y=pan.vy+dy;apply();
 });
-svg.addEventListener('pointerup',()=>{if(pan&&!pan.moved){sel=null;render()}pan=null});
+svg.addEventListener('pointerup',()=>{if(drag){dragEnd();return}if(pan&&!pan.moved){sel=null;render()}pan=null});
+svg.addEventListener('pointercancel',()=>{if(drag)dragCancel();pan=null});
 svg.addEventListener('wheel',e=>{
   e.preventDefault();
   const b=svg.getBoundingClientRect(),mx=e.clientX-b.left,my=e.clientY-b.top;
@@ -305,9 +309,79 @@ svg.addEventListener('wheel',e=>{
   view.x=mx-(mx-view.x)*k/view.k;view.y=my-(my-view.y)*k/view.k;view.k=k;apply();
 },{passive:false});
 
+/* 拖曳移動節點 */
+const SN={r:'右側',l:'左側',d:'下方',u:'上方'},clip=t=>t.length>10?t.slice(0,10)+'…':t;
+const toModel=e=>{const b=svg.getBoundingClientRect();return[(e.clientX-b.left-view.x)/view.k,(e.clientY-b.top-view.y)/view.k]};
+function visibleNodes(skip){const out=[],w=n=>{if(n.id===skip)return;out.push(n);if(!n.collapsed)n.children.forEach(w)};w(cur().root);return out}
+function sideAt(mx,my){const sd=MODES[cur().layout||'lr'],V={r:[1,0],l:[-1,0],d:[0,1],u:[0,-1]};
+  return sd.reduce((a,k)=>(V[k][0]*mx+V[k][1]*my>V[a][0]*mx+V[a][1]*my)?k:a,sd[0])}
+function dropAt(mx,my,id){
+  const root=cur().root;let best=null,bd=1e12;
+  for(const n of visibleNodes(id)){
+    const isR=n===root,h=n._hh,v=!isR&&(n._d==='D'||n._d==='U'),px=isR?8:(v?12:4),py=isR?8:(v?4:10);
+    if(mx<n._x-px||mx>n._x+n._w+px||my<n._y-h/2-py||my>n._y+h/2+py)continue;
+    const dx=Math.max(n._x-mx,0,mx-n._x-n._w),dy=Math.max(n._y-h/2-my,0,my-n._y-h/2),d2=dx*dx+dy*dy;
+    if(d2<bd){bd=d2;best={n,isR,v}}}
+  if(!best)return{empty:true,side:sideAt(mx,my)};
+  const {n,isR,v}=best;
+  if(isR)return{t:n,mode:'child',side:sideAt(mx,my)};
+  let mode='child';
+  if(v){const c=n._x+n._w/2,z=Math.max(n._w*.3,16);mode=mx<c-z?'before':mx>c+z?'after':'child'}
+  else mode=my<n._y-9?'before':my>n._y+9?'after':'child';
+  return{t:n,mode}}
+function insertAtSide(root,n,side,mx,my){
+  n.side=side;const v=side==='d'||side==='u';
+  const grp=root.children.filter(c=>(c.side||'r')===side&&c!==n);
+  const nxt=grp.find(c=>(v?c._x+c._w/2:c._y)>(v?mx:my));
+  if(nxt)root.children.splice(root.children.indexOf(nxt),0,n);
+  else if(grp.length)root.children.splice(root.children.indexOf(grp[grp.length-1])+1,0,n);
+  else root.children.push(n)}
+const detach=f=>f.p.children.splice(f.p.children.indexOf(f.n),1);
+function startDrag(){
+  drag.active=true;svg.style.cursor='grabbing';
+  G.insertAdjacentHTML('beforeend','<g id="dnd" style="pointer-events:none"></g>');
+  const ids=[];(function c(n){ids.push(n.id);n.children.forEach(c)})(find(drag.id).n);
+  ids.forEach(i=>{const el=G.querySelector('[data-id="'+i+'"]');if(el)el.style.opacity='.3'});
+}
+function dragMove(e){
+  if(!drag.active){if(Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy)<8)return;startDrag()}
+  const [mx,my]=toModel(e),res=dropAt(mx,my,drag.id);res.mx=mx;res.my=my;drag.res=res;drawDnd(mx,my,res)}
+function drawDnd(mx,my,res){
+  const f=find(drag.id),n=f.n,A='var(--accent)',root=cur().root;let s='',hint='';
+  if(res.empty){hint=f.p===root?'移到'+SN[res.side]:'請放到另一個節點上'}
+  else{const t=res.t,h=t._hh;
+    if(res.mode==='child'){
+      s+=`<rect x="${t._x-5}" y="${t._y-h/2-5}" width="${t._w+10}" height="${h+10}" rx="${h/2+5}" fill="none" stroke="${A}" stroke-width="3" stroke-dasharray="6 3"/>`;
+      hint=t===root?'成為中心主題的子節點('+SN[res.side]+')':'成為「'+clip(t.text)+'」的子節點'}
+    else{const v=t._d==='D'||t._d==='U',b=res.mode==='before';
+      s+=v?`<line x1="${b?t._x-12:t._x+t._w+12}" y1="${t._y-h/2-4}" x2="${b?t._x-12:t._x+t._w+12}" y2="${t._y+h/2+4}" stroke="${A}" stroke-width="4" stroke-linecap="round"/>`
+          :`<line x1="${t._x-4}" y1="${b?t._y-h/2-9:t._y+h/2+9}" x2="${t._x+t._w+4}" y2="${b?t._y-h/2-9:t._y+h/2+9}" stroke="${A}" stroke-width="4" stroke-linecap="round"/>`;
+      hint='放在「'+clip(t.text)+'」'+(b?'之前':'之後')}}
+  s+=`<g opacity=".88"><rect x="${mx-n._w/2}" y="${my-15}" width="${n._w}" height="30" rx="15" fill="var(--node)" stroke="${A}" stroke-width="2"/><text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="central" font-size="14" fill="var(--text)">${esc(n.text)}</text></g>`;
+  s+=`<text x="${mx}" y="${my+34}" text-anchor="middle" font-size="12" font-weight="600" fill="${A}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${esc(hint)}</text>`;
+  const el=G.querySelector('#dnd');if(el)el.innerHTML=s}
+function endDnd(){const el=G.querySelector('#dnd');if(el)el.remove();svg.style.cursor=''}
+function dragEnd(){const d=drag;drag=null;endDnd();if(!d.active)return;if(!d.res||!doDrop(d.id,d.res))render()}
+function dragCancel(){drag=null;endDnd();render()}
+function doDrop(id,res){
+  const f=find(id),root=cur().root;if(!f||!f.p)return false;const n=f.n;
+  if(res.empty){
+    if(f.p!==root){toast('請把節點拖到另一個節點上再放開');return false}
+    mut(()=>{detach(f);insertAtSide(root,n,res.side,res.mx,res.my);sel=n.id});return true}
+  const t=res.t;
+  if(res.mode==='child'){
+    mut(()=>{detach(f);
+      if(t===root)insertAtSide(root,n,res.side,res.mx,res.my);
+      else{delete n.side;t.children.push(n);t.collapsed=false}
+      sel=n.id});return true}
+  mut(()=>{detach(f);const p2=find(t.id).p,i=p2.children.indexOf(t)+(res.mode==='after'?1:0);
+    p2.children.splice(i,0,n);if(p2===root)n.side=t.side||'r';else delete n.side;sel=n.id});
+  return true}
+
 /* 鍵盤 */
 document.addEventListener('keydown',e=>{
   if(/INPUT|BUTTON/.test(e.target.tagName))return;
+  if(e.key==='Escape'&&drag&&drag.active){dragCancel();return}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return}
   if(e.key==='Tab'){e.preventDefault();addChild()}
   else if(e.key==='Enter'){e.preventDefault();addSibling()}
