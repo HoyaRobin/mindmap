@@ -35,7 +35,7 @@ svg text{user-select:none;-webkit-user-select:none;pointer-events:none;font-fami
 .add{opacity:0;transition:opacity .12s;cursor:pointer}
 .nd:hover .add,.nd.sel .add{opacity:1}
 .add:hover circle{fill:var(--hover)}
-#thm{position:fixed;z-index:25;width:230px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+#thm{position:fixed;z-index:25;width:230px;max-height:calc(100vh - 90px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
 #thm[hidden]{display:none}
 #thm .th{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:8px;border-radius:8px}
 #thm .th:hover{background:var(--hover)}
@@ -110,7 +110,13 @@ const THEMES={
   vivid:{n:'繽紛風',d:'高彩度、對比鮮明',pal:['#ff2e63','#ff8a00','#ffc800','#00b86b','#1e90ff','#9b4dff'],decay:.66,bg:'#fffaf0',
     v:{'--node':'#ffffff','--text':'#241f31','--muted':'#7a7388','--accent':'#2d2250','--panel':'#ffffff','--hover':'#f1ecfa'}},
   kids:{n:'幼兒色彩風',d:'柔和糖果色、圓潤粗線',pal:['#ff8fab','#ffc233','#6fd08c','#5fbff9','#b59cff','#ff9d66'],decay:.8,ew:4.5,sw:2.5,bg:'#fff8e7',
-    v:{'--node':'#ffffff','--text':'#5b4636','--muted':'#a58f7a','--accent':'#f0558a','--panel':'#ffffff','--hover':'#ffeccb'}}
+    v:{'--node':'#ffffff','--text':'#5b4636','--muted':'#a58f7a','--accent':'#f0558a','--panel':'#ffffff','--hover':'#ffeccb'}},
+  morandi:{n:'莫蘭迪',d:'灰調、霧面、高級感',pal:['#b08d8b','#a5a58d','#8e9aaf','#c4a484','#9a8c98','#7f9c96'],decay:.78,rx:10,bg:'#e9e6e1',
+    v:{'--node':'#f6f4f1','--text':'#4a4642','--muted':'#8c857d','--accent':'#6b6470','--panel':'#f6f4f1','--hover':'#dedad3'}},
+  macaron:{n:'Macaron 馬卡龍',d:'Dopamine 粉嫩多巴胺色',pal:['#ff8fb8','#ffa66b','#ffd93d','#5fdcae','#6ab8ff','#b48cff'],decay:.8,ew:3.5,bg:'#fdf5fa',
+    v:{'--node':'#ffffff','--text':'#4b3f5c','--muted':'#a597b5','--accent':'#8f5fe0','--panel':'#ffffff','--hover':'#f6e6f3'}},
+  cyber:{n:'Cyberpunk 霓虹暗黑',d:'深色底、霓虹發光線條',pal:['#ff2bd6','#00e5ff','#b6ff00','#ffe600','#8c5cff','#ff4d6d'],decay:.7,ew:3,glow:1,bg:'#0d0d1f',
+    v:{'--node':'#17172e','--text':'#e6f1ff','--muted':'#7f86b2','--accent':'#7a2cff','--panel':'#17172e','--hover':'#26264d'}}
 };
 const theme=()=>THEMES[cur().theme]||THEMES.default;
 function applyTheme(){const T=theme();
@@ -150,7 +156,7 @@ function render(){
       e+=`<path d="M${x1} ${p._y}C${m} ${p._y} ${m} ${n._y} ${x2} ${n._y}" stroke="${col}" stroke-width="${dep===1?(T.ew||3):(T.ew||3)*.75}" fill="none"/>`}
     const rc=`x="${n._x}" y="${n._y-h/2}" width="${n._w}" height="${h}" rx="${T.rx==null?h/2:T.rx}"`;
     nd+=`<g data-id="${n.id}" class="nd${n.id===sel?' sel':''}" style="cursor:pointer">`+
-      `<rect ${rc} fill="${solid?col:'var(--node)'}" stroke="${col}" stroke-width="${T.sw||2}"/>`+
+      `<rect ${rc} fill="${solid?col:'var(--node)'}" stroke="${col}" stroke-width="${T.sw||2}"${T.glow?` style="filter:drop-shadow(0 0 6px ${col})"`:''}/>`+
       (solid?'':`<rect ${rc} fill="${col}" fill-opacity=".13" stroke="none"/>`)+
       `<text x="${n._x+n._w/2}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="${isR?17:14}" font-weight="${isR?600:400}" fill="${ink}">${esc(n.text)}</text>`;
     const plus=(x,sd,gx)=>`<rect x="${gx}" y="${n._y-14}" width="32" height="28" fill="transparent"/><g class="add" data-add="${n.id}" data-side="${sd}"><circle cx="${x}" cy="${n._y}" r="10" fill="var(--panel)" stroke="${col}" stroke-width="2"/><path d="M${x-4} ${n._y}h8M${x} ${n._y-4}v8" stroke="${col}" stroke-width="2" stroke-linecap="round"/></g>`;
