@@ -35,6 +35,7 @@ svg text{user-select:none;-webkit-user-select:none;pointer-events:none;font-fami
 .add{opacity:0;transition:opacity .12s;cursor:pointer}
 .nd:hover .add,.nd.sel .add{opacity:1}
 .add:hover circle,.add:hover rect{fill:var(--hover)}
+#tb button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 #thm,#lay{position:fixed;z-index:25;width:230px;max-height:calc(100vh - 90px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
 #thm[hidden],#lay[hidden]{display:none}
 #thm .th,#lay .th{display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:100%;text-align:left;border:1px solid transparent;background:transparent;padding:8px;border-radius:8px}
@@ -62,7 +63,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
   <div id="foot">
     <button id="bNew">新增</button><button id="bExp">匯出備份</button><button id="bImp">匯入</button>
     <p>內容自動儲存在這個瀏覽器。換電腦請用匯出/匯入。</p>
-    <p id="ver">版本 2026-10-01 · v10</p>
+    <p id="ver">版本 2026-10-01 · v11</p>
   </div>
 </aside>
 <div id="main">
@@ -72,6 +73,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
     <button data-a="sib" title="Enter">新增同層</button>
     <button data-a="edit" title="F2 或雙擊">編輯文字</button>
     <button data-a="tog" title="Space">收合/展開</button>
+    <button data-a="acc" id="bAcc" title="開啟後，點節點會自動收起其他分支" aria-pressed="false">自動收納</button>
     <button data-a="col">換色</button>
     <button data-a="del" title="Delete">刪除</button>
     <span class="sp"></span>
@@ -93,7 +95,7 @@ body.open #side{transform:none;box-shadow:0 0 30px rgba(0,0,0,.3)}
 <script>
 const KEY='hoyarobin_mindmap_v1';
 const PAL=['#e4572e','#e9a23b','#3fa56b','#2f8fd8','#8a63d2','#d9558f'];
-const HG=48,VG=48;
+const HG=56,VG=48;
 const $=id=>document.getElementById(id);
 const svg=$('svg'),G=$('g'),L=$('list'),INP=$('inp'),FILE=$('file');
 const uid=()=>Math.random().toString(36).slice(2,9);
@@ -138,7 +140,7 @@ const getSel=()=>(sel&&find(sel))||find(cur().root.id);
 /* 版面 */
 const cx=document.createElement('canvas').getContext('2d');
 const tw=(n,root)=>{cx.font=(root?'600 17px ':'14px ')+'sans-serif';return Math.max(root?90:56,cx.measureText(n.text||' ').width+(root?40:28))};
-const VD=44;
+const VD=52;
 const MODES={lr:['r','l'],r:['r'],l:['l'],d:['d'],u:['u'],four:['r','d','l','u']};
 const DIRM={r:'R',l:'L',d:'D',u:'U'};
 function pickSide(){const m=cur(),sd=MODES[m.layout||'lr'],cnt=k=>m.root.children.filter(c=>(c.side||'r')===k).length;
@@ -208,12 +210,13 @@ function render(){
       (solid?'':`<rect ${rc} fill="${col}" fill-opacity=".13" stroke="none"/>`)+
       `<text x="${n._x+n._w/2}" y="${n._y}" text-anchor="middle" dominant-baseline="central" font-size="${isR?17:14}" font-weight="${isR?600:400}" fill="${ink}">${esc(n.text)}</text>`;
     const off=(dd,k)=>{const [ax,ay]=anc(n,'out',dd);return dd==='R'?[ax+k,ay]:dd==='L'?[ax-k,ay]:dd==='D'?[ax,ay+k]:[ax,ay-k]};
-    const plus=(dd,sd)=>{const [ax,ay]=anc(n,'out',dd),[x,y]=off(dd,16),
-      hr=dd==='R'?[ax,ay-14,32,28]:dd==='L'?[ax-32,ay-14,32,28]:dd==='D'?[ax-14,ay,28,32]:[ax-14,ay-32,28,32];
+    const plus=(dd,sd,k=16)=>{const [ax,ay]=anc(n,'out',dd),[x,y]=off(dd,k),L2=k+16,
+      hr=dd==='R'?[ax,ay-14,L2,28]:dd==='L'?[ax-L2,ay-14,L2,28]:dd==='D'?[ax-14,ay,28,L2]:[ax-14,ay-L2,28,L2];
       return `<rect x="${hr[0]}" y="${hr[1]}" width="${hr[2]}" height="${hr[3]}" fill="transparent"/><g class="add" data-add="${n.id}" data-side="${sd}"><title>新增子節點</title><circle cx="${x}" cy="${y}" r="10" fill="var(--panel)" stroke="${col}" stroke-width="2"/><path d="M${x-4} ${y}h8M${x} ${y-4}v8" stroke="${col}" stroke-width="2" stroke-linecap="round"/></g>`};
     if(isR){for(const sd of MODES[cur().layout||'lr'])nd+=plus(DIRM[sd],sd)}
-    else if(n.collapsed&&n.children.length){const [bx,bY]=off(d,13);
-      nd+=`<circle data-tog="${n.id}" cx="${bx}" cy="${bY}" r="10" fill="var(--node)" stroke="${col}" stroke-width="2" style="cursor:pointer"/><text x="${bx}" y="${bY}" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--text)">${n.children.length}</text>`}
+    else if(n.children.length){const cl=n.collapsed,[bx,bY]=off(d,13);
+      if(!cl)nd+=plus(d,'',36);
+      nd+=`<g data-tog="${n.id}"${cl?'':' class="add"'} style="cursor:pointer"><title>${cl?'展開子節點':'收合子節點'}</title><circle cx="${bx}" cy="${bY}" r="10" fill="var(--node)" stroke="${col}" stroke-width="2"/><text x="${bx}" y="${bY}" text-anchor="middle" dominant-baseline="central" font-size="${cl?11:14}" fill="var(--text)">${cl?n.children.length:'−'}</text></g>`}
     else nd+=plus(d,'');
     if(!isR){
       if(v){const sx=n._x+n._w+12;
@@ -224,7 +227,7 @@ function render(){
     if(!n.collapsed)n.children.forEach(c=>walk(c,n,c.ci!=null?T.sp[c.ci%T.sp.length]:(isR?rb[c.id]:base),isR?(DIRM[c.side||'r']||'R'):d,dep+1));
   };
   walk(r,null,T.sp[0],'R',0);
-  G.innerHTML=e+nd;apply();renderList();
+  G.innerHTML=e+nd;apply();renderList();syncAcc();
 }
 function apply(){G.setAttribute('transform',`translate(${view.x} ${view.y}) scale(${view.k})`)}
 function renderList(){L.innerHTML=S.maps.map(m=>`<div class="mi${m.id===S.cur?' on':''}" data-m="${m.id}"><span>${esc(m.name)}</span><button data-ren="${m.id}" title="改名">改名</button><button data-del="${m.id}" title="刪除">刪除</button></div>`).join('')}
@@ -251,9 +254,28 @@ function addSibling(id){
 function del(){const f=getSel();if(!f.p){toast('中心主題不能刪除');return}
   mut(()=>{f.p.children.splice(f.p.children.indexOf(f.n),1);sel=f.p.id})}
 function toggle(){const f=getSel();if(!f.n.children.length)return;mut(()=>{f.n.collapsed=!f.n.collapsed;sel=f.n.id})}
+/* 自動收納 */
+function syncAcc(){const b=$('bAcc');if(b){b.classList.toggle('on',!!S.acc);b.setAttribute('aria-pressed',S.acc?'true':'false')}}
+function toggleAcc(){S.acc=!S.acc;save();syncAcc();toast(S.acc?'自動收納已開啟：點節點會收起其他分支，再點一次收合自己':'自動收納已關閉')}
+function pathTo(id){const out=[];(function w(n){if(n.id===id){out.push(n);return true}for(const c of n.children)if(w(c)){out.push(n);return true}return false})(cur().root);return out}
+function keepScreen(id,fn){const f=find(id),ox=f?f.n._x:0,oy=f?f.n._y:0;fn();save();render();
+  const g=find(id);if(g&&f){view.x+=(ox-g.n._x)*view.k;view.y+=(oy-g.n._y)*view.k;apply()}}
+function focusOn(id,expand){
+  const keep=new Set(pathTo(id).map(x=>x.id));
+  keepScreen(id,()=>{
+    (function w(n){if(n.children.length&&!keep.has(n.id))n.collapsed=true;n.children.forEach(w)})(cur().root);
+    keep.forEach(k=>{const f=find(k);if(f&&f.n.children.length&&(k!==id||expand))f.n.collapsed=false})})}
+function nodeClick(id,wasSel){
+  if(!S.acc)return;const f=find(id);if(!f)return;
+  if(f.p&&f.n.children.length&&!f.n.collapsed&&wasSel){keepScreen(id,()=>{f.n.collapsed=true});return}
+  focusOn(id,true)}
+function toggleNode(id){
+  const f=find(id);if(!f)return;sel=id;
+  if(f.n.collapsed){if(S.acc)focusOn(id,true);else keepScreen(id,()=>{f.n.collapsed=false})}
+  else keepScreen(id,()=>{f.n.collapsed=true})}
 function color(){const f=getSel();if(!f.p){toast('中心主題不能換色');return}
   mut(()=>{const len=theme().sp.length;let c=(f.n.ci!=null?f.n.ci:-1)+1;if(c>=len){delete f.n.ci;toast('已恢復自動配色')}else f.n.ci=c;sel=f.n.id})}
-function undo(){if(!hist.length)return toast('沒有可復原的動作');S=JSON.parse(hist.pop());save();render()}
+function undo(){if(!hist.length)return toast('沒有可復原的動作');const acc=S.acc;S=JSON.parse(hist.pop());S.acc=acc;save();render()}
 function edit(){
   const f=getSel(),n=f.n,k=view.k,w=Math.max(n._w,110)*k;
   sel=n.id;
@@ -284,12 +306,16 @@ svg.addEventListener('pointerdown',e=>{
   if(ad){const id=ad.dataset.add;
     if(e.pointerType==='touch'&&sel!==id){sel=id;render();return}
     addChild(id,ad.dataset.side);return}
-  if(tg){const f=find(tg.dataset.tog);if(f)mut(()=>{f.n.collapsed=false;sel=f.n.id});return}
+  if(tg){const id=tg.dataset.tog,f=find(id);
+    if(f&&!f.n.collapsed&&e.pointerType==='touch'&&sel!==id){sel=id;render();return}
+    toggleNode(id);return}
   const g=e.target.closest('[data-id]');
   if(g){const id=g.dataset.id,now=Date.now();
     if(last.id===id&&now-last.t<400){sel=id;render();edit();last={id:null,t:0};return}
+    const was=sel===id;
     last={id,t:now};sel=id;render();
-    if(id!==cur().root.id){drag={id,sx:e.clientX,sy:e.clientY,active:false};try{svg.setPointerCapture(e.pointerId)}catch(_){}}
+    if(id!==cur().root.id){drag={id,sx:e.clientX,sy:e.clientY,active:false,was};try{svg.setPointerCapture(e.pointerId)}catch(_){}}
+    else nodeClick(id,was);
     return}
   pan={sx:e.clientX,sy:e.clientY,vx:view.x,vy:view.y,moved:false};
   svg.setPointerCapture(e.pointerId);
@@ -361,7 +387,7 @@ function drawDnd(mx,my,res){
   s+=`<text x="${mx}" y="${my+34}" text-anchor="middle" font-size="12" font-weight="600" fill="${A}" stroke="var(--panel)" stroke-width="3" paint-order="stroke">${esc(hint)}</text>`;
   const el=G.querySelector('#dnd');if(el)el.innerHTML=s}
 function endDnd(){const el=G.querySelector('#dnd');if(el)el.remove();svg.style.cursor=''}
-function dragEnd(){const d=drag;drag=null;endDnd();if(!d.active)return;if(!d.res||!doDrop(d.id,d.res))render()}
+function dragEnd(){const d=drag;drag=null;endDnd();if(!d.active){nodeClick(d.id,d.was);return}if(!d.res||!doDrop(d.id,d.res))render()}
 function dragCancel(){drag=null;endDnd();render()}
 function doDrop(id,res){
   const f=find(id),root=cur().root;if(!f||!f.p)return false;const n=f.n;
@@ -391,7 +417,7 @@ document.addEventListener('keydown',e=>{
 });
 
 /* 工具列 */
-const ACT={child:addChild,sib:addSibling,edit,tog:toggle,col:color,del,undo,zi:()=>zoom(1.2),zo:()=>zoom(1/1.2),ctr:center};
+const ACT={child:addChild,sib:addSibling,edit,tog:toggle,acc:toggleAcc,col:color,del,undo,zi:()=>zoom(1.2),zo:()=>zoom(1/1.2),ctr:center};
 $('tb').addEventListener('mousedown',e=>{if(e.target.tagName==='BUTTON')e.preventDefault()});
 $('tb').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
   if(b.id==='burger'){document.body.classList.toggle('open');return}
